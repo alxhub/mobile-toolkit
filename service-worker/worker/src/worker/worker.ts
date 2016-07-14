@@ -110,21 +110,6 @@ export class FallbackInstruction implements FetchInstruction {
   }
 }
 
-export class IndexInstruction implements FetchInstruction {
-  constructor(private request: Request, private manifest: SwManifest) {}
-
-  execute(sw: ServiceWorker): Observable<Response> {
-    if (this.request.url !== '/' || !this.manifest.routing.index) {
-      return Observable.empty<Response>();
-    }
-    return sw.handleFetch(sw.adapter.newRequest(this.request, {url: this.manifest.routing.index}), {});
-  }
-
-  describe(): string {
-    return `index(${this.request.url}, ${this.manifest.routing.index})`;
-  }
-}
-
 function _cacheInstruction(request: Request, group: CacheGroup): FetchInstruction {
   return new FetchFromCacheInstruction(cacheFor(group), request);
 }
@@ -156,6 +141,12 @@ function _handleRequest(request: Request, options: Object): any {
           groups.map(group => new FetchFromNetworkInstruction(request, undefined, options['timeout']))
         );
       });
+  }
+}
+
+export class ServiceWorkerNg {
+  get init(): Observable<SwManifest> {
+    return null;
   }
 }
 
