@@ -1,4 +1,4 @@
-import {SwManifest} from './manifest';
+import {SwManifest, ManifestDelta} from './manifest';
 import {WorkerAdapter} from './context'
 import {CacheManager} from './cache';
 import {Observable} from 'rxjs/Observable';
@@ -24,8 +24,8 @@ export interface ServiceWorkerPluginApi {
 }
 
 export interface Plugin {
-  install?(manifest: SwManifest): CustomOperator<Operation>;
-  activate?(manifest: SwManifest): CustomOperator<Operation>;
+  install?(manifest: ManifestDelta): CustomOperator<Operation>;
+  activate?(manifest: ManifestDelta): CustomOperator<Operation>;
   fetch?(req: Request, manifest: SwManifest): CustomOperator<FetchInstruction>;
 }
 

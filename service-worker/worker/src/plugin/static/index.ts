@@ -1,5 +1,5 @@
 import {SwManifest} from '../../worker/manifest';
-import {cacheFor} from '../../worker/setup';
+import {cacheFor} from './setup';
 import {Plugin, CustomOperator, FetchInstruction, ServiceWorkerPluginApi} from '../../worker/plugin';
 import {Observable} from 'rxjs/Observable';
 import {IndexInstruction, FetchFromCacheInstruction, FallbackInstruction} from './instruction';

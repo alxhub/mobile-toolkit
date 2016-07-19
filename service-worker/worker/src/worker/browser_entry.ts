@@ -1,5 +1,5 @@
 import {WorkerScope, WorkerAdapter} from './index';
-import {ServiceWorker} from './worker';
+import {ServiceWorkerDriver} from './driver';
 import {Events} from './context';
 import {Fetch} from './fetch';
 import {CacheManager} from './cache';
@@ -33,4 +33,6 @@ let cacheManager = new CacheManager(workerScope, workerAdapter);
 
 // Finally, construct the service worker. The side effects of the constructor will
 // wire up events.
-let worker = new ServiceWorker(workerScope, events, fetch, cacheManager, workerAdapter);
+//let worker = new ServiceWorkerDriver(workerScope, events, fetch, cacheManager, workerAdapter);
+
+let worker = new ServiceWorkerDriver(workerAdapter, cacheManager, fetch, events);

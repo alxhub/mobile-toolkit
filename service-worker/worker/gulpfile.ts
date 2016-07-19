@@ -136,10 +136,10 @@ gulp.task('task:companion:copy_deploy', () => gulp
   .pipe(gulp.dest('dist/companion')));
 
 gulp.task('task:worker:bundle', done => {
-  var builder = new Builder();
+  var builder = new Builder('dist');
   builder.config({
     map: {
-      'worker': 'dist/src/worker',
+      'worker': '@angular/service-worker/worker',
       'rxjs': 'node_modules/rxjs',
       'jshashes': 'node_modules/jshashes/hashes.js'
     },
@@ -153,7 +153,7 @@ gulp.task('task:worker:bundle', done => {
     }
   });
   builder
-    .buildStatic('worker/browser_entry', 'dist/worker.js')
+    .bundle('worker/browser_entry', 'dist/worker.js')
     .then(() => done());
 });
 

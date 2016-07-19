@@ -1,3 +1,5 @@
+/*
+
 import {Observable} from 'rxjs/Observable';
 import {Subject} from 'rxjs/Subject';
 
@@ -7,7 +9,6 @@ import {SwManifest, CacheEntry, CacheGroup, ManifestDelta, Route} from './manife
 import {diffManifests, parseManifest} from './manifest-parser';
 import {Fetch} from './fetch';
 import {CacheManager} from './cache';
-import {buildCaches, cleanupCaches, cacheFor} from './setup';
 
 import {extractBody, doAsync, concatLet} from './operator';
 
@@ -27,11 +28,6 @@ const NOTIFICATION_OPTION_NAMES = [
   'vibrate',
   'data'
 ];
-
-function diffManifestsObs(obs: Observable<string[]>): Observable<ManifestDelta> {
-  return obs
-    .map((contents: string[]) => diffManifests(contents[0], contents[1]));
-}
 
 export enum ManifestSource {
   NETWORK,
@@ -110,10 +106,6 @@ export class FallbackInstruction implements FetchInstruction {
   }
 }
 
-function _cacheInstruction(request: Request, group: CacheGroup): FetchInstruction {
-  return new FetchFromCacheInstruction(cacheFor(group), request);
-}
-
 function _devMode(request: Request, manifest: SwManifest): any {
   if (!manifest.dev) {
     return Observable.empty();
@@ -132,11 +124,6 @@ function _handleRequest(request: Request, options: Object): any {
         return Observable.concat(
           // Dev mode.
           _devMode(request, manifest),
-          Observable.of(new IndexInstruction(request, manifest)),
-          // Firstly, fall back if needed.
-          Observable.of(new FallbackInstruction(request, manifest)),
-          // Then serve requests from cache.
-          groups.map(group => _cacheInstruction(request, group)),
           // Then from network.
           groups.map(group => new FetchFromNetworkInstruction(request, undefined, options['timeout']))
         );
@@ -328,7 +315,7 @@ export class ServiceWorker {
           throw 'Failed to load fresh manifest.';
         }
       })
-      .let(extractBody);
+      .let();
   }
 
   loadCachedManifest(): Observable<string> {
@@ -369,3 +356,6 @@ export class ServiceWorker {
       .showNotification(desc['title'], options);
   }
 }
+
+*/
+export default [];

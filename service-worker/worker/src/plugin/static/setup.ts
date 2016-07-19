@@ -1,11 +1,11 @@
 import {Observable} from 'rxjs/Observable';
 
-import {SwManifest, CacheGroup, CacheEntry, ManifestDelta} from './manifest';
-import {EMPTY_CACHE_GROUP} from './manifest-parser';
-import {CacheManager} from './cache';
-import {Fetch} from './fetch';
-import {doAsync} from './operator';
-import {log, Verbosity} from './logging';
+import {SwManifest, CacheGroup, CacheEntry, ManifestDelta} from '../../worker/manifest';
+import {EMPTY_CACHE_GROUP} from '../../worker/manifest-parser';
+import {CacheManager} from '../../worker/cache';
+import {Fetch} from '../../worker/fetch';
+import {doAsync} from '../../worker/operator';
+import {log, Verbosity} from '../../worker/logging';
 
 
 interface SetupInstruction {
