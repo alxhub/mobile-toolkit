@@ -1,5 +1,7 @@
 import {stringStartsWith} from './builtins';
-import {SHA1} from 'jshashes';
+
+declare var Hashes;
+let SHA1 = Hashes.SHA1;
 
 function _mergeKeys(...objs: Object[]): string[] {
   let keys = {};

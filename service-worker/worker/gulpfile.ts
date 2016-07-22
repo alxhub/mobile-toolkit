@@ -14,6 +14,17 @@ var merge = require('merge-stream');
 var exec = require('child_process').exec;
 var uglify = require('gulp-uglify');
 var rename = require('gulp-rename');
+var rollup = require('rollup');
+var nodeResolve = require('rollup-plugin-node-resolve');
+
+class RxRewriter {
+
+  resolveId(id, from) {
+    if(id.startsWith('rxjs/')){
+      return `${process.cwd()}/node_modules/rxjs-es/${id.split('rxjs/').pop()}.js`;
+    }
+  }
+}
 
 let assign = (dest, ...sources) => {
   sources.forEach(source => {
@@ -34,7 +45,19 @@ var systemCompilerConfig = assign({},
 var commonCompilerConfig = assign({},
   systemCompilerConfig,
   {
-    "module": "commonjs"
+    "module": "es6",
+    "target": "es6",
+    "lib": ["es6", "dom"]
+  }
+);
+
+var transpilerConfig = assign({},
+  systemCompilerConfig,
+  {
+    "module": "umd",
+    "target": "es5",
+    "allowJs": true,
+    "outFile": "dist/worker.js"
   }
 );
 
@@ -78,8 +101,10 @@ gulp.task('task:companion:build', done => runSequence(
 
 gulp.task('task:worker:build', done => 
   runSequence(
-    'task:worker:compile_system',
-    'task:worker:bundle',
+    'task:worker:compile',
+    'task:worker:rollup',
+    'task:worker:concat',
+    'task:worker:transpile',
     done
   ));
 
@@ -98,7 +123,7 @@ gulp.task('task:worker:compile_system', () => {
   ]);
 });
 
-gulp.task('task:worker:compile_common', () => {
+gulp.task('task:worker:compile', () => {
   const stream = gulp
     .src([
       'src/worker/**/*.ts',
@@ -112,6 +137,42 @@ gulp.task('task:worker:compile_common', () => {
     stream.dts.pipe(gulp.dest(commonCompilerConfig.outDir))
   ]);
 });
+
+gulp.task('task:worker:rollup', done => {
+  rollup.rollup({
+    entry: 'dist/src/worker/browser_entry.js',
+    external: 'jshashes',
+    plugins: [
+      new RxRewriter(),
+      nodeResolve({
+        jsnext: true,
+        main: true,
+        extensions: ['.js'],
+        preferBuiltins: false
+      })
+    ]
+  }).then(bundle => bundle.write({
+    format: 'cjs',
+    dest: 'dist/src/worker-rollup.js'
+  }))
+  .catch(err => console.error(err))
+  .then(() => done());
+});
+
+gulp.task('task:worker:concat', () => gulp
+  .src([
+    'node_modules/jshashes/hashes.js',
+    'dist/src/worker-rollup.js'
+  ])
+  .pipe(concat('src/worker-concat.js'))
+  .pipe(gulp.dest('dist')));
+
+gulp.task('task:worker:transpile', () => gulp
+  .src([
+    'dist/src/worker-concat.js'
+  ])
+  .pipe(ts(transpilerConfig))
+  .pipe(gulp.dest('dist')));
 
 gulp.task('task:companion:compile', () => {
   const stream = gulp
@@ -153,7 +214,7 @@ gulp.task('task:worker:bundle', done => {
     }
   });
   builder
-    .bundle('worker/browser_entry', 'dist/worker.js')
+    .bundle('worker/browser_entry', 'dist/worker-.js')
     .then(() => done());
 });
 

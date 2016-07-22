@@ -1,4 +1,4 @@
-import {WorkerScope, WorkerAdapter} from './index';
+import {WorkerScope, WorkerAdapter} from './context';
 import {ServiceWorkerDriver} from './driver';
 import {Events} from './context';
 import {Fetch} from './fetch';
@@ -6,6 +6,7 @@ import {CacheManager} from './cache';
 
 import './rxjs';
 
+declare var importScripts;
 importScripts('ngsw-manifest.json.js');
 
 declare var global;

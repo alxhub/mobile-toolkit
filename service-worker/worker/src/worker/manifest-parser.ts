@@ -1,5 +1,7 @@
 import {ManifestDelta, SwManifest, CacheGroup, CacheGroupMap, CacheEntryMap} from './manifest';
-import {SHA1} from 'jshashes';
+
+declare var Hashes;
+let SHA1 = Hashes.SHA1;
 
 interface DiffArrayResult {
   added: string[];

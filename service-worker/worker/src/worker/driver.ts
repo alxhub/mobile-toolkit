@@ -167,13 +167,13 @@ export class ServiceWorkerDriver implements ServiceWorkerPluginApi {
       .mergeMap(manifest => this
         .plugins
         .filter(plugin => !!plugin.fetch)
-        .reduce((obs, plugin) =>
+        .reduce((obs: Observable<FetchInstruction>, plugin) =>
           obs.let(plugin.fetch(request, manifest)), Observable.empty<FetchInstruction>())
       )
       .concat(Observable.of(new FetchFromNetworkInstruction(this, request)))
-      .concatMap(instruction => instruction.execute())
+      .concatMap((instruction: FetchInstruction): Observable<Response> => instruction.execute())
       .filter(response => !!response)
-      .first();
+      .first() as Observable<Response>;
   }
 
   collectOperations(fn: any): Observable<Operation> {
@@ -191,5 +191,5 @@ export function extractBody(obs: Observable<Response>): Observable<string> {
   return obs.flatMap(resp =>
     resp != undefined ?
       resp.text() :
-      Observable.of<string>(undefined));
+      Observable.of<string>(undefined)) as Observable<string>;
 }
