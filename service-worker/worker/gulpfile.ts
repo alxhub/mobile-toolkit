@@ -54,12 +54,52 @@ var commonCompilerConfig = assign({},
 var transpilerConfig = assign({},
   systemCompilerConfig,
   {
-    "module": "umd",
     "target": "es5",
     "allowJs": true,
-    "outFile": "dist/worker.js"
+    "outFile": "dist/src/worker-transpiled.js"
   }
 );
+
+function pluginTasks(name: string) {
+  gulp.task(`task:plugin_${name}:build`, done => runSequence(
+    `task:plugin_${name}:compile`,
+    `task:plugin_${name}:rollup`,
+    done));
+
+  gulp.task(`task:plugin_${name}:compile`, () => gulp
+    .src([
+      `src/plugin/${name}/**/*.ts`,
+      'src/typings/**/*.d.ts',
+      'typings/globals/**/*.d.ts', 
+      'typings/modules/**/*.d.ts'
+    ])
+    .pipe(ts(commonCompilerConfig))
+    .pipe(gulp.dest('dist')));
+
+  gulp.task(`task:plugin_${name}:rollup`, done => {
+    rollup.rollup({
+      entry: `dist/src/plugin/${name}/index.js`,
+      external: [
+        'rxjs/Observable',
+        'rxjs/Subject'
+      ],
+      plugins: [
+        new RxRewriter(),
+        nodeResolve({
+          jsnext: true,
+          main: true,
+          extensions: ['.js'],
+          preferBuiltins: false
+        })
+      ]
+    }).then(bundle => bundle.write({
+      format: 'cjs',
+      dest: `dist/plugin/${name}.js`
+    }))
+    .catch(err => console.error(err))
+    .then(() => done());
+  });
+}
 
 gulp.task('default', ['worker:build']);
 
@@ -103,8 +143,9 @@ gulp.task('task:worker:build', done =>
   runSequence(
     'task:worker:compile',
     'task:worker:rollup',
-    'task:worker:concat',
     'task:worker:transpile',
+    'task:worker:pack',
+    'task:worker:rewrite_modules',
     done
   ));
 
@@ -141,9 +182,15 @@ gulp.task('task:worker:compile', () => {
 gulp.task('task:worker:rollup', done => {
   rollup.rollup({
     entry: 'dist/src/worker/browser_entry.js',
-    external: 'jshashes',
+    external: (id) => {
+      if (id === 'jshashes' || id.substring(0, 5) == 'rxjs/') {
+        return true;
+      } else {
+        return false;
+      }
+    },
     plugins: [
-      new RxRewriter(),
+      //new RxRewriter(),
       nodeResolve({
         jsnext: true,
         main: true,
@@ -169,10 +216,12 @@ gulp.task('task:worker:concat', () => gulp
 
 gulp.task('task:worker:transpile', () => gulp
   .src([
-    'dist/src/worker-concat.js'
+    'dist/src/worker-rollup.js'
   ])
   .pipe(ts(transpilerConfig))
   .pipe(gulp.dest('dist')));
+
+pluginTasks('static');
 
 gulp.task('task:companion:compile', () => {
   const stream = gulp
@@ -196,27 +245,28 @@ gulp.task('task:companion:copy_deploy', () => gulp
   ])
   .pipe(gulp.dest('dist/companion')));
 
-gulp.task('task:worker:bundle', done => {
-  var builder = new Builder('dist');
+gulp.task('task:worker:pack', done => {
+  var builder = new Builder();
   builder.config({
     map: {
-      'worker': '@angular/service-worker/worker',
       'rxjs': 'node_modules/rxjs',
       'jshashes': 'node_modules/jshashes/hashes.js'
     },
     packages: {
-      'worker': {
-        defaultExtension: 'js'
-      },
       'rxjs': {
         defaultExtension: 'js'
       }
     }
   });
   builder
-    .bundle('worker/browser_entry', 'dist/worker-.js')
+    .bundle('dist/src/worker-transpiled.js', 'dist/src/worker-packed.js')
     .then(() => done());
 });
+
+gulp.task('task:worker:rewrite_modules', () => systemRewriter(
+  'dist/src/worker-packed.js',
+  'dist/worker.js'
+));
 
 gulp.task('task:worker:minify', () => gulp
   .src([
@@ -418,3 +468,55 @@ gulp.task('task:e2e_tests:run', done => {
     done();
   });
 });
+
+const SYSTEM_REGISTER_PREFIX = 'System.registerDynamic("';
+const RX_BAD_PREFIX = 'node_modules/rxjs/';
+
+function systemRewriter(inFile: string, outFile: string): void {
+  let contents = fs
+    .readFileSync(inFile, 'utf8')
+    .split('\n')
+    .map(line => {
+      // Look for System.registerDynamic lines, skipping everything else.
+      if (line.substring(0, SYSTEM_REGISTER_PREFIX.length) !== SYSTEM_REGISTER_PREFIX) {
+        return line;
+      }
+      let partial = line.substring(SYSTEM_REGISTER_PREFIX.length);
+
+      // Extract the module name.
+      let endQuote = partial.indexOf('"');
+      if (endQuote === -1) {
+        return line;
+      }
+      let moduleName = partial.substring(0, endQuote);
+      let suffix = partial.substring(endQuote);
+
+      // Rewrite the module name.
+      let newModuleName = rewriteModuleName(moduleName);
+
+      // Return the recombined line.
+      return SYSTEM_REGISTER_PREFIX + newModuleName + suffix;
+    })
+    .join('\n');
+  fs.writeFileSync(outFile, contents, 'utf8');
+}
+
+function rewriteModuleName(module: string): string {
+  // Rewrite the bundle to the external module name.
+  if (module === 'dist/src/worker-transpiled.js') {
+    return '@angular/service-worker/worker';
+  }
+
+  // Rewrite node_modules/rxjs/*.js to rxjs/*.
+  if (module.substring(0, RX_BAD_PREFIX.length) === RX_BAD_PREFIX) {
+    let rxModule = 'rxjs/' + module.substring(RX_BAD_PREFIX.length);
+    let dotJs = rxModule.indexOf('.js');
+    if (dotJs === -1) {
+      return rxModule;
+    }
+    return rxModule.substring(0, dotJs);
+  }
+  
+  // Ignore other modules.
+  return module;
+}

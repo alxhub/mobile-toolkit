@@ -1,4 +1,4 @@
-import {SwManifest} from '../../worker/manifest';
+import {SwManifest} from '@angular/service-worker/worker';
 import {cacheFor} from './setup';
 import {Plugin, CustomOperator, FetchInstruction, ServiceWorkerPluginApi} from '../../worker/plugin';
 import {Observable} from 'rxjs/Observable';

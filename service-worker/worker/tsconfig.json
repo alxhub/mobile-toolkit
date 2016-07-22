@@ -12,6 +12,7 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
+      "@angular/service-worker/worker": ["dist/src/worker"],
       "@angular/service-worker": ["dist/companion"]
     }
 	},
