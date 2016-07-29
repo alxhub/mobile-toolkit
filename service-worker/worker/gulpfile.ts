@@ -146,23 +146,9 @@ gulp.task('task:worker:build', done =>
     'task:worker:transpile',
     'task:worker:pack',
     'task:worker:rewrite_modules',
+    'task:worker:concat',
     done
   ));
-
-gulp.task('task:worker:compile_system', () => {
-  const stream = gulp
-    .src([
-      'src/worker/**/*.ts',
-      'src/typings/**/*.d.ts',
-      'typings/globals/**/*.d.ts',
-      'typings/modules/**/*.d.ts'
-    ])
-    .pipe(ts(systemCompilerConfig));
-  return merge([
-    stream.js.pipe(gulp.dest(systemCompilerConfig.outDir)),
-    stream.dts.pipe(gulp.dest(systemCompilerConfig.outDir))
-  ]);
-});
 
 gulp.task('task:worker:compile', () => {
   const stream = gulp
@@ -190,7 +176,6 @@ gulp.task('task:worker:rollup', done => {
       }
     },
     plugins: [
-      //new RxRewriter(),
       nodeResolve({
         jsnext: true,
         main: true,
@@ -209,9 +194,9 @@ gulp.task('task:worker:rollup', done => {
 gulp.task('task:worker:concat', () => gulp
   .src([
     'node_modules/jshashes/hashes.js',
-    'dist/src/worker-rollup.js'
+    'dist/src/worker-modules.js'
   ])
-  .pipe(concat('src/worker-concat.js'))
+  .pipe(concat('worker.js'))
   .pipe(gulp.dest('dist')));
 
 gulp.task('task:worker:transpile', () => gulp
@@ -265,7 +250,7 @@ gulp.task('task:worker:pack', done => {
 
 gulp.task('task:worker:rewrite_modules', () => systemRewriter(
   'dist/src/worker-packed.js',
-  'dist/worker.js'
+  'dist/src/worker-modules.js'
 ));
 
 gulp.task('task:worker:minify', () => gulp
