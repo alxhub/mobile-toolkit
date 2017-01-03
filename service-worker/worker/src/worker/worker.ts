@@ -21,11 +21,11 @@ export class VersionWorkerImpl implements VersionWorker {
       private fetcher: NgSwFetch,
       private plugins: Plugin<any>[]) {}
 
-  refresh(req: Request): Observable<Response> {
+  refresh(req: Request): Promise<Response> {
     return this.fetcher.refresh(req);
   }
 
-  fetch(req: Request): Observable<Response> {
+  fetch(req: Request): Promise<Response> {
     const instructions: FetchInstruction[] = [
       fetchFromNetworkInstruction(this, req, false),
     ];
@@ -33,14 +33,14 @@ export class VersionWorkerImpl implements VersionWorker {
       .plugins
       .filter(plugin => !!plugin.fetch)
       .forEach(plugin => plugin.fetch(req, instructions));
-    return Observable
-      .from(instructions)
-      .concatMap(op => op())
-      .filter(resp => resp !== null)
-      .first();
+    return instructions.reduce<Promise<Response>>(
+      (prev, curr) => prev.then(resp => resp ? resp : curr()),
+      Promise.resolve(null),
+    );
   }
 
-  setup(previous: VersionWorkerImpl): Observable<any> {
+
+  setup(previous: VersionWorkerImpl): Promise<any> {
     let operations: Operation[] = [];
     for (let i = 0; i < this.plugins.length; i++) {
       const plugin: Plugin<any> = this.plugins[i];
@@ -50,9 +50,10 @@ export class VersionWorkerImpl implements VersionWorker {
         plugin.setup(operations);
       }
     }
-    return Observable
-      .from(operations)
-      .concatMap(op => op());
+    return operations.reduce<Promise<any>>(
+      (prev, curr) => prev.then(() => curr()),
+      Promise.resolve(null),
+    );
   }
 
   cleanup(): Operation[] {

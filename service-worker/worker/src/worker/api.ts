@@ -3,17 +3,13 @@ import {Observable} from 'rxjs/Observable';
 import {NgSwAdapter, NgSwCache} from './facade';
 import {Manifest} from './manifest';
 
-export interface CustomOperator<T> {
-  (obs: Observable<T>): Observable<T>;
-}
-
 export interface FetchInstruction {
-  (): Observable<Response>;
+  (): Promise<Response>;
   desc?: Object;
 }
 
 export interface Operation {
-  (): Observable<any>;
+  (): Promise<any>;
   desc?: Object;
 }
 
@@ -22,8 +18,8 @@ export interface VersionWorker {
   readonly cache: NgSwCache;
   readonly adapter: NgSwAdapter;
 
-  refresh(req: Request): Observable<Response>;
-  fetch(req: Request): Observable<Response>;
+  refresh(req: Request): Promise<Response>;
+  fetch(req: Request): Promise<Response>;
   showNotification(title: string, options?: Object): void;
 }
 

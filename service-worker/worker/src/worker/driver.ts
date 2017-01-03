@@ -4,7 +4,6 @@ import {ScopedCache} from './cache';
 import {NgSwAdapter, NgSwCache, NgSwEvents, NgSwFetch} from './facade';
 import {LOG, LOGGER, Verbosity} from './logging';
 import {Manifest, parseManifest} from './manifest';
-import {doAsync} from './rxjs';
 
 import {Observable} from 'rxjs/Observable';
 
@@ -31,58 +30,49 @@ export class Driver {
       private cache: NgSwCache,
       private events: NgSwEvents,
       public fetcher: NgSwFetch) {
-        this.id = driverId++;
-        this.scopedCache = new ScopedCache(this.cache, 'ngsw:');
+    this.id = driverId++;
+    this.scopedCache = new ScopedCache(this.cache, 'ngsw:');
 
-        this.updateCheck = this.checkForUpdates();
+    this.updateCheck = this.checkForUpdates();
 
-        // On installation, load the worker as if a fetch event happened.
-        // This will prime the caches.
-        events.install.subscribe(event => {
-          LOG.info('INSTALL EVENT');
-          event.waitUntil(this.workerFromActiveOrFreshManifest());
-        });
+    // On installation, load the worker as if a fetch event happened.
+    // This will prime the caches.
+    events.install = (event: InstallEvent) => {
+      LOG.info('INSTALL EVENT');
+      event.waitUntil(this.workerFromActiveOrFreshManifest());
+    };
 
-        events.activate.subscribe(() => {
-          LOG.info('ACTIVATE EVENT');
-        });
+    events.activate = (event: ActivateEvent) => {
+      LOG.info('ACTIVATE EVENT');
+    };
 
-        events.fetch.subscribe(event => {
-          let req = event.request;
-          event.respondWith(this.onFetch(event).then((resp) => {
-            return resp;
-          }));
-        });
+    events.fetch = (event: FetchEvent) => {
+      let req = event.request;
+      event.respondWith(this.onFetch(event).then((resp) => {
+        return resp;
+      }));
+    };
 
-        events
-          .message
-          .filter(event => event.ports.length === 1 && event.data && event.data.hasOwnProperty('$ngsw'))
-          .mergeMap(event => {
-            const respond: MessagePort = event.ports[0];
-            return this
-            .handleMessage(event.data)
-            .do(
-              response => respond.postMessage(response),
-              undefined,
-              () => respond.postMessage(null)
-            )
-            .ignoreElements();
-          })
-          .subscribe();
-
-        events
-          .push
-          .filter(event => !!event.data)
-          .map(event => event.data.json())
-          .subscribe(data => {
-            if (!this.activeWorker) {
-              return;
-            }
-            this
-              .activeWorker
-              .then(worker => (worker as VersionWorkerImpl).push(data));
-          });
+    events.message = (event: MessageEvent) => {
+      if (event.ports.length !==1 || !event.data || !event.data.hasOwnProperty('$ngsw')) {
+        return;
       }
+      const respond: MessagePort = event.ports[0];
+      this.handleMessage(event.data, respond);
+    }
+
+    events.push = (event: PushEvent) => {
+      if (!this.activeWorker || !event.data) {
+        return;
+      }
+      Promise
+        .all([
+          this.activeWorker,
+          event.data.json(),
+        ])
+        .then(result => (result[0] as VersionWorkerImpl).push(result[1]));
+    };
+  }
 
   private onFetch(event: FetchEvent): Promise<Response> {
     return this
@@ -98,7 +88,7 @@ export class Driver {
           return this.activeWorker;
         }
       })
-      .then(worker => worker.fetch(event.request).toPromise());
+      .then(worker => worker.fetch(event.request));
   }
 
   private maybeUpdate(event: FetchEvent): Promise<VersionWorker> {
@@ -158,7 +148,6 @@ export class Driver {
     plugins.push(...this.plugins.map(factory => factory(worker)));
     return worker
       .setup(existing as VersionWorkerImpl)
-      .toPromise()
       .then(() => worker);
   }
 
@@ -166,7 +155,6 @@ export class Driver {
     return this
       .scopedCache
       .load(cache, this.manifestUrl)
-      .toPromise()
       .then(resp => this.manifestFromResponse(resp));
   }
 
@@ -174,7 +162,6 @@ export class Driver {
     return this
       .fetcher
       .refresh(this.manifestUrl)
-      .toPromise()
       .then(resp => this.manifestFromResponse(resp));
   }
 
@@ -190,7 +177,7 @@ export class Driver {
   }
 
   private deleteManifestInCache(cache: string): Promise<void> {
-    return this.scopedCache.invalidate(cache, this.manifestUrl).toPromise();
+    return this.scopedCache.invalidate(cache, this.manifestUrl);
   }
 
   private checkForUpdates(): Promise<boolean> {
@@ -232,18 +219,23 @@ export class Driver {
       });
   }
 
-  private handleMessage(message: Object): Observable<Object> {
+  private handleMessage(message: Object, respond: MessagePort): Promise<Object> {
     if (!this.activeWorker) {
-      return Observable.empty();
+      return;
     }
 
     switch (message['cmd']) {
       case 'ping':
-        return Observable.empty();
+        respond.postMessage(null);
       case 'checkUpdate':
-        return Observable.fromPromise(this.checkForUpdates());
+        this.checkForUpdates().then(value => {
+            respond.postMessage(value);
+            respond.postMessage(null);
+        });
       case 'log':
-        return LOGGER.messages;
+        LOGGER.messages = (message: string) => {
+          respond.postMessage(message);
+        };
       default:
         return Observable
           .fromPromise(this.activeWorker)
