@@ -118,7 +118,7 @@ describe('ngsw', () => {
       driver.mockUrl('/hello.txt', 'Hello world!');
       driver.mockUrl('/goodbye.txt', 'Goodbye world!');
       driver.mockUrl('/solong.txt', 'So long world!');
-    })
+    });
     it('caches a single file', (done) => driver
       .triggerInstall()
       .then(() => expectCached(driver, simpleManifestCache, '/hello.txt', 'Hello world!'))

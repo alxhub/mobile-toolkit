@@ -31,7 +31,7 @@ export interface StreamController {
 export interface Plugin<T extends Plugin<T>> {
   setup(operations: Operation[]): void;
   update?(operations: Operation[], previous: T): void;
-  fetch?(req: Request, instructions: FetchInstruction[]): void;
+  fetch?(req: Request, instructions: FetchInstruction[], carryOn: Operation[]): void;
   cleanup?(operations: Operation[]): void;
   message?(message: any, id: number): void;
   messageClosed?(id: number);

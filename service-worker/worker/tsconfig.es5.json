@@ -31,6 +31,7 @@
     "src/build/index.ts",
     "src/webpack.ts",
     "src/worker/index.ts",
+    "src/test/unit/dynamic.spec.ts",
     "src/test/unit/worker.spec.ts",
     "src/test/e2e/harness/client/main.ts",
     "src/test/e2e/harness/server/server.ts",

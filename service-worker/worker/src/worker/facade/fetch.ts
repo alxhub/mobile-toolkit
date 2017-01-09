@@ -1,7 +1,6 @@
 import {NgSwAdapter} from './adapter';
 
 export class NgSwFetch {
-
   constructor(private scope: ServiceWorkerGlobalScope, private adapter: NgSwAdapter) {}
 
   request(req: Request): Promise<Response> {

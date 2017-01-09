@@ -24,16 +24,20 @@ export class VersionWorkerImpl implements VersionWorker {
     const instructions: FetchInstruction[] = [
       fetchFromNetworkInstruction(this, req, false),
     ];
+    const carryOn: Operation[] = [];
     this
       .plugins
       .filter(plugin => !!plugin.fetch)
-      .forEach(plugin => plugin.fetch(req, instructions));
+      .forEach(plugin => plugin.fetch(req, instructions, carryOn));
+    carryOn.reduce<Promise<any>>(
+      (prev, curr) => prev.then(_ => curr),
+      Promise.resolve(),
+    );
     return instructions.reduce<Promise<Response>>(
       (prev, curr) => prev.then(resp => resp ? resp : curr()),
       Promise.resolve(null),
     );
   }
-
 
   setup(previous: VersionWorkerImpl): Promise<any> {
     let operations: Operation[] = [];

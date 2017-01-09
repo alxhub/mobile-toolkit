@@ -57,6 +57,9 @@ export class Logger implements Logging {
   }
 
   release(): void {
+    if (this.buffer === null) {
+      return;
+    }
     this.buffer.forEach(entry => this.messages(entry));
     this.buffer = null;
   }

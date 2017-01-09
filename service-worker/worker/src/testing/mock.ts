@@ -72,13 +72,23 @@ export class TestWorkerScope implements ServiceWorkerGlobalScope {
   activateListener: Function = () => null;
   fetchListener: Function = () => null;
 
-  mockResponses: {[key: string]: MockResponse} = {};
+  mockResponses: {[key: string]: {response: MockResponse, manual: boolean}} = {};
+  pending: {resolve: Function, response: MockResponse} = null;
 
-  mockFetch(url: string, response: string | MockResponse) {
+  mockFetch(url: string, response: string | MockResponse, manual: boolean = false) {
     if (typeof response == 'string') {
       response = new MockResponse(<string>response);
     }
-    this.mockResponses[url] = <MockResponse>response;
+    this.mockResponses[url] = {response: <MockResponse>response, manual};
+  }
+
+  completeRequest(): void {
+    if (this.pending === null) {
+      return;
+    }
+    const pending = this.pending;
+    this.pending = null;
+    pending.resolve(pending.response);
   }
 
   unmockFetch(url: string): void {
@@ -101,7 +111,17 @@ export class TestWorkerScope implements ServiceWorkerGlobalScope {
     let url: string = (typeof req == 'string') ? <string>req : (<Request>req).url;
     url = url.split('?')[0];
     if (this.mockResponses.hasOwnProperty(url)) {
-      return Promise.resolve(this.mockResponses[url].clone()) ;
+      const entry = this.mockResponses[url];
+      if (entry.manual) {
+        if (this.pending !== null) {
+          return Promise.reject(new Error('A manual response is already queued'));
+        }
+        return new Promise((resolve, reject) => {
+          this.pending = {resolve, response: entry.response};
+        });
+      } else {
+        return Promise.resolve(entry.response.clone());
+      }
     }
     var resp = new MockResponse('');
     resp.ok = false;
@@ -162,8 +182,8 @@ export class TestWorkerDriver {
     this.caches.caches = {};
   }
 
-  mockUrl(url: string, response: string | MockResponse): void {
-    this.scope.mockFetch(url, response);
+  mockUrl(url: string, response: string | MockResponse, manual: boolean = false): void {
+    this.scope.mockFetch(url, response, manual);
   }
 
   unmockUrl(url: string): void {

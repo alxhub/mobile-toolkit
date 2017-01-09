@@ -1,7 +1,6 @@
 import {NgSwCache} from './facade';
 
 export class ScopedCache implements NgSwCache {
-
   constructor(private delegate: NgSwCache, private prefix: string) {}
 
   load(cache: string, req: string | Request) {
@@ -18,5 +17,9 @@ export class ScopedCache implements NgSwCache {
 
   invalidate(cache: string, req: string | Request): Promise<void> {
     return this.delegate.invalidate(this.prefix + cache, req);
+  }
+
+  list(cache: string): Promise<string[]> {
+    return this.delegate.list(this.prefix + cache);
   }
 }

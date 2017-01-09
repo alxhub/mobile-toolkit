@@ -35,7 +35,7 @@ export class RouteRedirectionImpl implements Plugin<RouteRedirectionImpl> {
     // No setup needed.
   }
 
-  fetch(req: Request, ops: FetchInstruction[]): void {
+  fetch(req: Request, ops: FetchInstruction[], carryOn: Operation[]): void {
     const manifest = this.routeManifest;
     if (!manifest || !manifest.routes) {
       return;
