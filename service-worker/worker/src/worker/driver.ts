@@ -262,7 +262,13 @@ export class Driver {
     plugins.push(...this.plugins.map(factory => factory(worker)));
     return worker
       .validate()
-      .then(() => worker);
+      .then(valid => {
+        if (!valid) {
+          this.lifecycleLog.push(`cached version ${manifest._hash} not valid`);
+          return null;
+        }
+        return worker;
+      });
   }
 
   private setupManifest(manifest: Manifest, existing: VersionWorker = null): Promise<VersionWorker> {
