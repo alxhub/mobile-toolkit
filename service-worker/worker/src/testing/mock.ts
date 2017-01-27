@@ -133,6 +133,10 @@ export class TestWorkerScope implements ServiceWorkerGlobalScope {
   removeEventListener(type: string, listener: Function): void {
     throw 'Remove unsupported!';
   }
+
+  skipWaiting(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 interface TestExtendableEvent extends ExtendableEvent {

@@ -37,28 +37,43 @@ export class Driver {
       public fetcher: NgSwFetch) {
     this.id = driverId++;
     this.scopedCache = new ScopedCache(this.cache, 'ngsw:');
-  
-    this.init = this.initialize();
-    this.init.then(() => this.checkForUpdate());
 
     events.install = (event: InstallEvent) => {
       this.lifecycleLog.push('install event');
+      event.waitUntil(this
+        .reset()
+        .then(() => this.scope.skipWaiting())
+      );
     };
+
     events.activate = (event: ActivateEvent) => {
+      if (!this.init) {
+        this.startup();
+      }
       this.lifecycleLog.push('activate event');
+      event.waitUntil(this.scope.clients.claim());
     };
+
     events.fetch = (event: FetchEvent) => {
       const req = event.request;
-      // Skip fetch events when in LAME state - no need to wait for init for this.
-      if (this.state === DriverState.LAME) {
-        return;
-      }
       if (req.url.endsWith('/ngsw.log')) {
         event.respondWith(this
           .status()
           .then(status => this.adapter.newResponse(JSON.stringify(status, null, 2)))
         );
         return;
+      }
+
+      // Skip fetch events when in LAME state - no need to wait for init for this.
+      if (this.state === DriverState.LAME) {
+        return;
+      }
+
+      if (this.state === DriverState.STARTUP) {
+        this.startup();
+      }
+      if (!this.init) {
+        throw new Error(`init Promise not present in state ${DriverState[this.state]}`);
       }
 
       event.respondWith(this
@@ -83,6 +98,19 @@ export class Driver {
         })
       );
     };
+  }
+
+  private reset(): Promise<any> {
+    return this
+      .scopedCache
+      .keys()
+      .then(keys => Promise.all(keys.map(key => this.scopedCache.remove(key)))
+        .then(() => this.lifecycleLog.push(`reset removed ${keys.length} ngsw: caches`)));
+  }
+
+  private startup() {
+    this.init = this.initialize();
+    this.init.then(() => this.checkForUpdate());
   }
 
   private maybeUpdate(clientId: any): Promise<any> {
@@ -120,8 +148,11 @@ export class Driver {
               .then(() => worker ? this.setManifest(manifest, 'active') : null)
               .then(() => {
                 if (worker) {
+                  const oldActive = this.active;
                   this.active = worker as VersionWorkerImpl;
+                  this.cleanup(oldActive);
                 }
+                this.lifecycleLog.push(`updated to manifest ${manifest._hash}`);
                 this.goToState(DriverState.READY);
               });
           });
@@ -144,8 +175,11 @@ export class Driver {
         this.fetchManifestFromNetwork(),
       ])
       .then((manifests: Manifest[]) => {
-        const [activeManifest, staged, network] = manifests;
+        const [active, staged, network] = manifests;
         if (!network) {
+          return false;
+        }
+        if (!!active && active._hash === network._hash) {
           return false;
         }
         if (!!staged && staged._hash === network._hash) {
@@ -159,10 +193,10 @@ export class Driver {
           start = this.clearStaged();
         }
         return start
-          .then(() => this.setupManifest(staged, this.active))
-          .then(() => this.setManifest(staged, 'staged'))
+          .then(() => this.setupManifest(network, this.active))
+          .then(() => this.setManifest(network, 'staged'))
           .then(() => {
-            this.lifecycleLog.push(`staged update to ${staged._hash}`);
+            this.lifecycleLog.push(`staged update to ${network._hash}`);
             this.goToState(DriverState.UPDATE_PENDING);
             return true;
           });
@@ -191,6 +225,7 @@ export class Driver {
               this.goToState(DriverState.LAME);
               return;
             }
+            this.lifecycleLog.push(`manifest ${active._hash} activated`);
             this.active = worker as VersionWorkerImpl;
             // If a staged manifest exist, go to UPDATE_PENDING instead of READY.
             if (!!staged) {
@@ -258,14 +293,17 @@ export class Driver {
 
   private openManifest(manifest: Manifest): Promise<VersionWorker> {
     const plugins: Plugin<any>[] = [];
-    const worker = new VersionWorkerImpl(this, this.scope, manifest, this.adapter, new ScopedCache(this.cache, `manifest:${manifest._hash}:`), this.fetcher, plugins);
+    const worker = new VersionWorkerImpl(this, this.scope, manifest, this.adapter, new ScopedCache(this.scopedCache, `manifest:${manifest._hash}:`), this.fetcher, plugins);
     plugins.push(...this.plugins.map(factory => factory(worker)));
     return worker
       .validate()
       .then(valid => {
         if (!valid) {
           this.lifecycleLog.push(`cached version ${manifest._hash} not valid`);
-          return null;
+          // Recover from the error by deleting all existing caches (effectively a reset).
+          return this
+            .reset()
+            .then(() => null);
         }
         return worker;
       });
@@ -273,11 +311,21 @@ export class Driver {
 
   private setupManifest(manifest: Manifest, existing: VersionWorker = null): Promise<VersionWorker> {
     const plugins: Plugin<any>[] = [];
-    const worker = new VersionWorkerImpl(this, this.scope, manifest, this.adapter, new ScopedCache(this.cache, `manifest:${manifest._hash}:`), this.fetcher, plugins);
+    const worker = new VersionWorkerImpl(this, this.scope, manifest, this.adapter, new ScopedCache(this.scopedCache, `manifest:${manifest._hash}:`), this.fetcher, plugins);
     plugins.push(...this.plugins.map(factory => factory(worker)));
     return worker
       .setup(existing as VersionWorkerImpl)
       .then(() => worker);
+  }
+
+  private cleanup(worker: VersionWorkerImpl): void {
+    worker
+      .cleanup()
+      .reduce<Promise<Response>>(
+        (prev, curr) => prev.then(resp => curr()),
+        Promise.resolve(null)
+      )
+      .then(() => this.lifecycleLog.push(`cleaned up old version ${worker.manifest._hash}`));
   }
 
   private status(): Promise<any> {
@@ -443,7 +491,7 @@ export class OldDriver {
 
   private manifestToWorker(manifest: Manifest, existing: VersionWorker = null): Promise<VersionWorker> {
     const plugins: Plugin<any>[] = [];
-    const worker = new VersionWorkerImpl(this, this.scope, manifest, this.adapter, new ScopedCache(this.cache, `manifest:${manifest._hash}:`), this.fetcher, plugins);
+    const worker = new VersionWorkerImpl(this, this.scope, manifest, this.adapter, new ScopedCache(this.scopedCache, `manifest:${manifest._hash}:`), this.fetcher, plugins);
     plugins.push(...this.plugins.map(factory => factory(worker)));
     return worker
       .setup(existing as VersionWorkerImpl)
