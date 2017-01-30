@@ -27,6 +27,12 @@ export class Driver {
   private streams: {[key: number]: MessagePort} = {};
   private lifecycleLog: string[] = [];
 
+  ready: Promise<any>;
+  readyResolve: Function;
+
+  updatePending: Promise<any>;
+  updatePendingResolve: Function;
+
   constructor(
       private manifestUrl: string,
       private plugins: PluginFactory<any>[],
@@ -36,10 +42,13 @@ export class Driver {
       private events: NgSwEvents,
       public fetcher: NgSwFetch) {
     this.id = driverId++;
+    this.ready = new Promise(resolve => this.readyResolve = resolve)
+    this.updatePending = new Promise(resolve => this.updatePendingResolve = resolve);
+
     this.scopedCache = new ScopedCache(this.cache, 'ngsw:');
 
     events.install = (event: InstallEvent) => {
-      this.lifecycleLog.push('install event');
+      this.lifecycle('install event');
       event.waitUntil(this
         .reset()
         .then(() => this.scope.skipWaiting())
@@ -50,7 +59,7 @@ export class Driver {
       if (!this.init) {
         this.startup();
       }
-      this.lifecycleLog.push('activate event');
+      this.lifecycle('activate event');
       event.waitUntil(this.scope.clients.claim());
     };
 
@@ -63,13 +72,13 @@ export class Driver {
         );
         return;
       }
-
+      
       // Skip fetch events when in LAME state - no need to wait for init for this.
       if (this.state === DriverState.LAME) {
         return;
       }
 
-      if (this.state === DriverState.STARTUP) {
+      if (this.state === DriverState.STARTUP && !this.init) {
         this.startup();
       }
       if (!this.init) {
@@ -100,12 +109,12 @@ export class Driver {
     };
 
     events.message = (event: MessageEvent) => {
-      // Skip push events when in LAME state - no need to wait for init for this.
+      // Skip events when in LAME state - no need to wait for init for this.
       if (this.state === DriverState.LAME) {
         return;
       }
 
-      if (this.state === DriverState.STARTUP) {
+      if (this.state === DriverState.STARTUP && !this.init) {
         this.startup();
       }
       if (!this.init) {
@@ -118,7 +127,7 @@ export class Driver {
 
       this.init.then(() => {
         if (this.state !== DriverState.READY && this.state !== DriverState.UPDATE_PENDING) {
-          // Drop push messages that show up before we're ready.
+          // Drop messages that show up before we're ready.
           return;
         }
 
@@ -126,6 +135,7 @@ export class Driver {
         const id = this.streamId++;
         this.streams[id] = respond;
         respond.postMessage({'$ngsw': true, 'id': id});
+        this.lifecycle(`msg[${id}]: ${JSON.stringify(event.data)}`);
         this.handleMessage(event.data, id);
       });
     }
@@ -136,7 +146,7 @@ export class Driver {
         return;
       }
 
-      if (this.state === DriverState.STARTUP) {
+      if (this.state === DriverState.STARTUP && !this.init) {
         this.startup();
       }
       if (!this.init) {
@@ -159,12 +169,16 @@ export class Driver {
     };
   }
 
+  private lifecycle(msg: string): void {
+    this.lifecycleLog.push(msg);
+  }
+
   private reset(): Promise<any> {
     return this
       .scopedCache
       .keys()
       .then(keys => Promise.all(keys.map(key => this.scopedCache.remove(key)))
-        .then(() => this.lifecycleLog.push(`reset removed ${keys.length} ngsw: caches`)));
+        .then(() => this.lifecycle(`reset removed ${keys.length} ngsw: caches`)));
   }
 
   private startup() {
@@ -211,7 +225,7 @@ export class Driver {
                   this.active = worker as VersionWorkerImpl;
                   this.cleanup(oldActive);
                 }
-                this.lifecycleLog.push(`updated to manifest ${manifest._hash}`);
+                this.lifecycle(`updated to manifest ${manifest._hash}`);
                 this.goToState(DriverState.READY);
               });
           });
@@ -224,7 +238,7 @@ export class Driver {
 
   private checkForUpdate(): Promise<boolean> {
     if (this.state !== DriverState.READY) {
-      this.lifecycleLog.push(`skipping update check, in state ${DriverState[this.state]}`);
+      this.lifecycle(`skipping update check, in state ${DriverState[this.state]}`);
       return Promise.resolve(false);
     }
     return Promise
@@ -242,20 +256,20 @@ export class Driver {
           return false;
         }
         if (!!staged && staged._hash === network._hash) {
-          this.lifecycleLog.push(`network manifest ${network._hash} is already staged`);
+          this.lifecycle(`network manifest ${network._hash} is already staged`);
           this.goToState(DriverState.UPDATE_PENDING);
           return true;
         }
         let start = Promise.resolve();
         if (!!staged) {
-          this.lifecycleLog.push(`staged manifest ${staged._hash} is old, removing`);
+          this.lifecycle(`staged manifest ${staged._hash} is old, removing`);
           start = this.clearStaged();
         }
         return start
           .then(() => this.setupManifest(network, this.active))
           .then(() => this.setManifest(network, 'staged'))
           .then(() => {
-            this.lifecycleLog.push(`staged update to ${network._hash}`);
+            this.lifecycle(`staged update to ${network._hash}`);
             this.goToState(DriverState.UPDATE_PENDING);
             return true;
           });
@@ -263,6 +277,9 @@ export class Driver {
   }
 
   private initialize(): Promise<any> {
+    if (!!this.init) {
+      throw new Error("double initialization!");
+    }
     if (this.state !== DriverState.STARTUP) {
       return Promise.reject(new Error("driver: initialize() called when not in STARTUP state"));
     }
@@ -284,11 +301,11 @@ export class Driver {
               this.goToState(DriverState.LAME);
               return;
             }
-            this.lifecycleLog.push(`manifest ${active._hash} activated`);
+            this.lifecycle(`manifest ${active._hash} activated`);
             this.active = worker as VersionWorkerImpl;
             // If a staged manifest exist, go to UPDATE_PENDING instead of READY.
             if (!!staged) {
-              this.lifecycleLog.push(`staged manifest ${staged._hash} present at initialization`);
+              this.lifecycle(`staged manifest ${staged._hash} present at initialization`);
               this.goToState(DriverState.UPDATE_PENDING);
               return;
             }
@@ -302,7 +319,7 @@ export class Driver {
       .fetchManifestFromNetwork()
       .then(manifest => {
         if (!manifest) {
-          this.lifecycleLog.push('no network manifest found to install from');
+          this.lifecycle('no network manifest found to install from');
           this.goToState(DriverState.LAME);
           return null;
         }
@@ -310,7 +327,7 @@ export class Driver {
           .setupManifest(manifest, null)
           .then(worker => {
             if (!worker) {
-              this.lifecycleLog.push('network manifest setup failed');
+              this.lifecycle('network manifest setup failed');
               this.goToState(DriverState.LAME);
               return null;
             }
@@ -318,7 +335,7 @@ export class Driver {
               .setManifest(manifest, 'active')
               .then(() => {
                 this.active = worker as VersionWorkerImpl;
-                this.lifecycleLog.push(`installed version ${manifest._hash} from network`);
+                this.lifecycle(`installed version ${manifest._hash} from network`);
                 this.goToState(DriverState.READY);
               });
           });
@@ -358,7 +375,7 @@ export class Driver {
       .validate()
       .then(valid => {
         if (!valid) {
-          this.lifecycleLog.push(`cached version ${manifest._hash} not valid`);
+          this.lifecycle(`cached version ${manifest._hash} not valid`);
           // Recover from the error by deleting all existing caches (effectively a reset).
           return this
             .reset()
@@ -384,7 +401,7 @@ export class Driver {
         (prev, curr) => prev.then(resp => curr()),
         Promise.resolve(null)
       )
-      .then(() => this.lifecycleLog.push(`cleaned up old version ${worker.manifest._hash}`));
+      .then(() => this.lifecycle(`cleaned up old version ${worker.manifest._hash}`));
   }
 
   private status(): Promise<any> {
@@ -395,17 +412,30 @@ export class Driver {
   }
 
   private goToState(state: DriverState): void {
-    this.lifecycleLog.push(`transition from ${DriverState[this.state]} to ${DriverState[state]}`);
+    this.lifecycle(`transition from ${DriverState[this.state]} to ${DriverState[state]}`);
     this.state = state;
+    if (state === DriverState.READY && this.readyResolve !== null) {
+      const resolve = this.readyResolve;
+      this.readyResolve = null;
+      resolve();
+    }
+    if (state === DriverState.UPDATE_PENDING && this.updatePendingResolve !== null) {
+      this.ready = new Promise(resolve => this.readyResolve = resolve)
+      const resolve = this.updatePendingResolve;
+      this.updatePendingResolve = null;
+      resolve();
+    }
   }
 
   private handleMessage(message: Object, id: number): Promise<Object> {
     if (!this.active) {
+      this.lifecycle(`no active worker in state ${DriverState[this.state]}`)
       return;
     }
 
     switch (message['cmd']) {
       case 'ping':
+        this.lifecycle(`responding to ping on ${id}`)
         this.closeStream(id);
         break;
       case 'checkUpdate':
@@ -438,5 +468,11 @@ export class Driver {
     this.streams[id].postMessage(message);
   }
 
-  closeStream(id: number): void {}
+  closeStream(id: number): void {
+    if (!this.streams.hasOwnProperty(id)) {
+      return;
+    }
+    this.streams[id].postMessage(null);
+    delete this.streams[id];
+  }
 }
