@@ -109,7 +109,7 @@ function createServiceWorker(scope, adapter, cache, fetch, events) {
 
 describe('ngsw', () => {
   const simpleManifestCache = `manifest:${SIMPLE_MANIFEST_HASH}:static`;
-  describe('initial load', () => {
+  fdescribe('initial load', () => {
     let driver: TestWorkerDriver = new TestWorkerDriver(createServiceWorker);
     beforeAll(() => {
       driver.emptyCaches();
